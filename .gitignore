@@ -1,0 +1,77 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos de Cython
+*.c
+*.so
+
+# --- Entornos virtuales ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Paquetes y builds ---
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --- Archivos de configuración locales ---
+*.env
+*.ini
+*.local
+
+# --- IDEs ---
+# PyCharm
+.idea/
+*.iml
+
+# VSCode
+.vscode/
+
+# Eclipse/PyDev
+.project
+.pydevproject
+
+# --- Logs ---
+*.log
+
+# --- Datos temporales ---
+*.tmp
+*.temp
+*.bak
+
+# --- Bytecode adicional ---
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Archivos del sistema ---
+.DS_Store
+Thumbs.db
+
+# --- pytest ---
+.cache/
+.junit/
+
+# --- mypy ---
+.mypy_cache/
+
+# --- tox ---
+.tox/
+
+# --- coverage ---
+htmlcov/
+.coverage
+.coverage.*
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- PyInstaller ---
+*.spec
+
+# --- Poetry ---
+poetry.lock
