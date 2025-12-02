@@ -1,6 +1,8 @@
 import socket
-import signal
+import select
+import time
 import os
+
 
 class TCPServer:
 
@@ -9,56 +11,62 @@ class TCPServer:
         self.port = port
         self.buffer_size = buffer_size
         self.keepalive_timeout = keepalive_timeout
+
+        # TCP
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    def start(self)
+        # UDP (puerto aleatorio)
+        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_sock.bind((self.host, 0))
+        print("UDP listening on:", self.udp_sock.getsockname()[1])
+
+    def start(self):
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen()
-        print(f"Servidor iniciado en {self.host}:{self.port}")
+        print(f"Servidor TCP iniciado en {self.host}:{self.port}")
 
+    def acceptConnections(self):
+        conn, addr = self.server_socket.accept()
+        print(f"Conexion TCP desde: {addr}")
+
+        # Enviar puerto UDP al cliente
+        udp_port = self.udp_sock.getsockname()[1]
+        conn.sendall(str(udp_port).encode())
+
+        return conn, addr
+
+    # -------- UDP --------
+
+    def udp_send(self, udp_addr, data: bytes):
+        self.udp_sock.sendto(data, udp_addr)
+
+    def udp_receive(self):
+        """Recibe cualquier mensaje UDP"""
+        self.udp_sock.setblocking(False)
+        try:
+            data, addr = self.udp_sock.recvfrom(self.buffer_size)
+            return data, addr
+        except BlockingIOError:
+            return None, None
+
+    # -------- KEEPALIVE TCP --------
+
+    def keepAlive(self, conn, addr):
         while True:
-            conn , addr = self.server_socket.accept()
-            print(f"Conexion recibida de: {addr}")
+            r, _, _ = select.select([conn], [], [], self.keepalive_timeout)
 
-            pid = os.fork()
+            if not r:
+                print(f"Timeout keepalive de {addr}")
+                conn.close()
+                break
 
-            if pid == 0:
-                while True:
-                    print("Itera")
+            try:
+                data = conn.recv(self.buffer_size)
+                if not data:
+                    print(f"Cliente {addr} cerro TCP")
+                    break
 
-            if os.fork() == 0:
-                while True:
-                    # Armo el select
-                    rlist, _, _ = select.select([conn], [], [], KEEPALIVE_TIMEOUT)
+            except:
+                break
 
-                    if not rlist:
-                        # No llegaron datos, salio por timeout
-                        print(f"Timeout de keepalive para {addr}. Cerrando conexion...")
-                        self.server_socket.close()
-                        os.kill(pid, signal.SIGKILL)
-                        break
-
-                    try:
-                        data = conn.recv(BUFFER_SIZE)
-
-                        if not data:
-                            print(f"Cliente {addr} cerro la conexion.")
-                            break
-
-                        mensaje = data.decode()
-                        print(f"{addr}: {mensaje}")
-                        conn.sendall(b"OK")
-
-                    except ConnectionResetError:
-                        print(f"Cliente {addr} reseteo la conexion.")
-                        self.server_socket.close()
-                        os.kill(pid, signal.SIGKILL)
-                        break
-
-
-    def keep_alive(self):
-
-
-    def stop(self):
-        self.server_socket.close()
-        print("Servidor detenido.")
+        conn.close()
