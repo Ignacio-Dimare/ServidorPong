@@ -1,6 +1,6 @@
 from Servidor import TCPServer
 import os
-from time import sleep
+import time
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -8,6 +8,12 @@ PORT = 5000
 players = {}
 current_session = 1
 next_player_slot = 1
+
+# Creo PIPE envio UDP
+read_envioUDP, write_envioUDP = os.pipe()
+
+# Creo PIPE recibe UDP e imprime
+read_recUDP, write_recUDP = os.pipe()
 
 def register_player(addr):
     global current_session, next_player_slot, players
@@ -22,7 +28,34 @@ def register_player(addr):
         next_player_slot = 1
         current_session += 1
 
+
 def main():
+    #Proceso ejemplo escribe
+    pid = os.fork()
+    if pid == 0:
+        i = 0
+        os.close(read_recUDP)
+        os.close(write_recUDP)
+        os.close(read_envioUDP)
+        while True:
+            mensaje = f"Contador {i}".encode()
+            os.write(write_envioUDP, mensaje)
+            i += 1
+            time.sleep(1)
+        os._exit(0)
+
+    # Proceso ejemplo recibe e imprime
+    pid = os.fork()
+    if pid == 0:
+        i = 0
+        os.close(read_envioUDP)
+        os.close(write_envioUDP)
+        os.close(write_recUDP)
+        while True:
+            data = os.read(read_recUDP, 1024)
+            print(data)
+        os._exit(0)
+
     server = TCPServer(
         host=HOST,
         port=PORT,
@@ -32,39 +65,49 @@ def main():
 
     server.start()
 
+    os.close(write_envioUDP)
+    os.close(read_recUDP)
+
     while True:
-        conn, tcp_addr = server.acceptConnections()
+        conn, tcp_addr, udp_addr_cliente = server.acceptConnections()
 
-        register_player(tcp_addr)
+        register_player(udp_addr_cliente)
 
-        # ---------- HIJO UDP ----------
+        # ---------- HIJO UDP (escucha) ----------
         if os.fork() == 0:
-
-            udp_addr = None
-
-            print("[UDP] Esperando primer paquete UDP...")
-
-            # Esperar a que el cliente envíe su primer mensaje UDP
-            while udp_addr is None:
-                data, udp_addr = server.udp_receive()
-                sleep(0.05)
-
-            print("[UDP] Cliente UDP conectado desde:", udp_addr)
-
-            # Loop UDP principal
             while True:
-                # Enviar mensaje al cliente
-                server.udp_send(udp_addr, b"hola")
+                data, udp_addr = server.udp_receive(False)
+                if udp_addr is None:
+                    continue
+                mensaje = f"[UDP] Cliente UDP: {udp_addr}, Mensaje: {data}".encode()
+                os.write(write_recUDP, mensaje)
+            os._exit(0)
 
-                # Recibir mensajes del cliente
-                data, addr = server.udp_receive()
-                print("[UDP recibido del cliente]:", data.decode())
+        # ---------- HIJO UDP (envío) ----------
+        if os.fork() == 0:
+            # COPIA LOCAL del diccionario para evitar inconsistencias
+            local_players = list(players.items())  # [(key, addr), ...]
 
+            index = 0
+            total = len(local_players)
+
+            while True:
+                key, addr = local_players[index]
+
+                data = os.read(read_envioUDP, 1024)
+
+                print("Enviando a:", key, addr)
+                server.udp_send(addr, data)
+
+                index = (index + 1) % total
+                time.sleep(1)
+            os.close(read_envioUDP)
+            os._exit(0)
 
         # ---------- HIJO KeepAlive ----------
         if os.fork() == 0:
             server.keepAlive(conn, tcp_addr)
-            exit(0)
+            os._exit(0)
 
 
 if __name__ == "__main__":
