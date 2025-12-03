@@ -1,6 +1,7 @@
 from Servidor import TCPServer
 import os
 import time
+import signal
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -74,7 +75,8 @@ def main():
         register_player(udp_addr_cliente)
 
         # ---------- HIJO UDP (escucha) ----------
-        if os.fork() == 0:
+        pid_escucha = os.fork()
+        if pid_escucha == 0:
             while True:
                 data, udp_addr = server.udp_receive(False)
                 if udp_addr is None:
@@ -84,7 +86,8 @@ def main():
             os._exit(0)
 
         # ---------- HIJO UDP (envío) ----------
-        if os.fork() == 0:
+        pid_envio = os.fork()
+        if pid_envio == 0:
             # COPIA LOCAL del diccionario para evitar inconsistencias
             local_players = list(players.items())  # [(key, addr), ...]
 
@@ -107,6 +110,8 @@ def main():
         # ---------- HIJO KeepAlive ----------
         if os.fork() == 0:
             server.keepAlive(conn, tcp_addr)
+            os.kill(pid_escucha, signal.SIGTERM)
+            os.kill(pid_envio, signal.SIGTERM)
             os._exit(0)
 
 
