@@ -69,21 +69,21 @@ def main():
     os.close(write_envioUDP)
     os.close(read_recUDP)
 
+    # ---------- HIJO UDP (escucha) ----------
+    pid_escucha = os.fork()
+    if pid_escucha == 0:
+        while True:
+            data, udp_addr = server.udp_receive(False)
+            if udp_addr is None:
+                continue
+            mensaje = f"[UDP] Cliente UDP: {udp_addr}, Mensaje: {data}".encode()
+            os.write(write_recUDP, mensaje)
+        os._exit(0)
+
     while True:
         conn, tcp_addr, udp_addr_cliente = server.acceptConnections()
 
         register_player(udp_addr_cliente)
-
-        # ---------- HIJO UDP (escucha) ----------
-        pid_escucha = os.fork()
-        if pid_escucha == 0:
-            while True:
-                data, udp_addr = server.udp_receive(False)
-                if udp_addr is None:
-                    continue
-                mensaje = f"[UDP] Cliente UDP: {udp_addr}, Mensaje: {data}".encode()
-                os.write(write_recUDP, mensaje)
-            os._exit(0)
 
         # ---------- HIJO UDP (envío) ----------
         pid_envio = os.fork()
