@@ -2,6 +2,8 @@ from Servidor import TCPServer
 import os
 import time
 import signal
+import ast
+import fcntl, os
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -16,22 +18,49 @@ read_envioUDP, write_envioUDP = os.pipe()
 # Creo PIPE recibe UDP e imprime
 read_recUDP, write_recUDP = os.pipe()
 
+# Creo PIPE nuevo hijo
+read_newChild, write_newChild = os.pipe()
+
+# Creo PIPE players diponibles
+read_availablePlayers, write_availablePlayers = os.pipe()
+
+def make_nonblocking(fd):
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
 def register_player(addr):
     global current_session, next_player_slot, players
 
-    key = f"player_{next_player_slot}-{current_session}"
+    try:
+        playersAvailable = os.read(read_availablePlayers, 1024)
+    except BlockingIOError:
+        playersAvailable = None
+
+    if playersAvailable:
+        key = playersAvailable.decode()
+    else:
+        key = f"player_{next_player_slot}-{current_session}"
+
+        if next_player_slot == 1:
+            next_player_slot = 2
+        else:
+            next_player_slot = 1
+            current_session += 1
+
     players[key] = addr
     print("Registrado:", key, "->", addr)
 
-    if next_player_slot == 1:
-        next_player_slot = 2
-    else:
-        next_player_slot = 1
-        current_session += 1
+    mensaje = f"add,{key},{addr}".encode()
+    os.write(write_newChild, mensaje)
+
+    return key
 
 
 def main():
     #Proceso ejemplo escribe
+    make_nonblocking(read_newChild)
+    make_nonblocking(read_envioUDP)
+    make_nonblocking(read_availablePlayers)
     pid = os.fork()
     if pid == 0:
         i = 0
@@ -39,7 +68,19 @@ def main():
         os.close(write_recUDP)
         os.close(read_envioUDP)
         while True:
-            mensaje = f"Contador {i}".encode()
+            mensaje = f"player_1-1 Contador {i}".encode()
+            os.write(write_envioUDP, mensaje)
+            i += 1
+            mensaje = f"player_2-1 Contador {i}".encode()
+            os.write(write_envioUDP, mensaje)
+            i += 1
+            mensaje = f"player_1-2 Contador {i}".encode()
+            os.write(write_envioUDP, mensaje)
+            i += 1
+            mensaje = f"player_2-2 Contador {i}".encode()
+            os.write(write_envioUDP, mensaje)
+            i += 1
+            mensaje = f"player_1-3 Contador {i}".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
             time.sleep(1)
@@ -54,7 +95,8 @@ def main():
         os.close(write_recUDP)
         while True:
             data = os.read(read_recUDP, 1024)
-            print(data)
+            if data:
+                print(data)
         os._exit(0)
 
     server = TCPServer(
@@ -80,38 +122,79 @@ def main():
             os.write(write_recUDP, mensaje)
         os._exit(0)
 
+    # ---------- HIJO UDP (envío) ----------
+    pid_envio = os.fork()
+    if pid_envio == 0:
+        # LOCAL del diccionario para evitar inconsistencias
+        players = {}
+
+        while True:
+            #Actualizo el diccionario de players
+            try:
+                data = os.read(read_newChild, 1024)
+            except BlockingIOError:
+                data = None
+
+            if data:
+                data = data.decode()
+                partes = data.split(",")
+
+                op = partes[0]
+                key = partes[1]
+
+                # reconstruyo addr COMPLETO
+                addr_str = ",".join(partes[2:])  # ('127.0.0.1', 55516)
+
+                import ast
+                addr = ast.literal_eval(addr_str)  # → ('127.0.0.1', 55516)
+
+                print("Hijo registra:", key, addr)
+
+                if op == "add":
+                    players[key] = addr
+                elif op == "del":
+                    players.pop(key, None)
+
+            try:
+                data = os.read(read_envioUDP, 1024)
+            except BlockingIOError:
+                data = None
+
+            if data:
+                data = data.decode()
+                partes = data.split(" ")
+
+                key = partes[0]
+                mensaje = partes[1]
+
+                addr = players.get(key)
+                if addr is None:
+                    print(f"El player {key} no existe")
+                    continue
+
+                #Envio dato recibido por el pipe
+                print("Enviando a:", key, addr)
+                server.udp_send(addr, mensaje.encode())
+
+        os.close(read_envioUDP)
+        os._exit(0)
+
+    os.close(read_newChild)
     while True:
         conn, tcp_addr, udp_addr_cliente = server.acceptConnections()
 
-        register_player(udp_addr_cliente)
-
-        # ---------- HIJO UDP (envío) ----------
-        pid_envio = os.fork()
-        if pid_envio == 0:
-            # COPIA LOCAL del diccionario para evitar inconsistencias
-            local_players = list(players.items())  # [(key, addr), ...]
-
-            index = 0
-            total = len(local_players)
-
-            while True:
-                key, addr = local_players[index]
-
-                data = os.read(read_envioUDP, 1024)
-
-                print("Enviando a:", key, addr)
-                server.udp_send(addr, data)
-
-                index = (index + 1) % total
-                time.sleep(1)
-            os.close(read_envioUDP)
-            os._exit(0)
+        playerKey = register_player(udp_addr_cliente)
 
         # ---------- HIJO KeepAlive ----------
         if os.fork() == 0:
             server.keepAlive(conn, tcp_addr)
-            os.kill(pid_escucha, signal.SIGTERM)
-            os.kill(pid_envio, signal.SIGTERM)
+
+            mensaje = f"del,{playerKey},{tcp_addr}".encode()
+
+            os.write(write_newChild, mensaje)
+
+            os.write(write_availablePlayers, playerKey.encode())
+
             os._exit(0)
 
 
