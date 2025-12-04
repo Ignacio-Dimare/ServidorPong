@@ -49,12 +49,14 @@ class Client:
     # ---------------- UDP ----------------
 
     def udp_listen(self):
-        while True:
-            r, _, _ = select.select([self.udp_sock], [], [], 0.5)
-            if self.udp_sock in r:
-                data, addr = self.udp_sock.recvfrom(self.buffer_size)
-                print(f"\n[UDP recibido] {data.decode().strip()}")
-                print("UDP> ", end="", flush=True)
+        data = None
+        addr = None
+        r, _, _ = select.select([self.udp_sock], [], [], 0.5)
+        if self.udp_sock in r:
+            data, addr = self.udp_sock.recvfrom(self.buffer_size)
+
+        return data, addr
+
 
     def udp_send(self, server_udp_port, msg):
         self.udp_sock.sendto(msg.encode(), (self.server_ip, server_udp_port))

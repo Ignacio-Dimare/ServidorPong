@@ -3,7 +3,7 @@ import os
 import time
 import signal
 import ast
-import fcntl, os
+import fcntl
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -15,7 +15,7 @@ next_player_slot = 1
 # Creo PIPE envio UDP
 read_envioUDP, write_envioUDP = os.pipe()
 
-# Creo PIPE recibe UDP e imprime
+# Creo PIPE recibe UDP
 read_recUDP, write_recUDP = os.pipe()
 
 # Creo PIPE nuevo hijo
@@ -68,19 +68,19 @@ def main():
         os.close(write_recUDP)
         os.close(read_envioUDP)
         while True:
-            mensaje = f"player_1-1 Contador {i}".encode()
+            mensaje = f"player_1-1;Contador {i}\n".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
-            mensaje = f"player_2-1 Contador {i}".encode()
+            mensaje = f"player_2-1;Contador {i}\n".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
-            mensaje = f"player_1-2 Contador {i}".encode()
+            mensaje = f"player_1-2;Contador {i}\n".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
-            mensaje = f"player_2-2 Contador {i}".encode()
+            mensaje = f"player_2-2;Contador {i}\n".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
-            mensaje = f"player_1-3 Contador {i}".encode()
+            mensaje = f"player_1-3;Contador {i}\n".encode()
             os.write(write_envioUDP, mensaje)
             i += 1
             time.sleep(1)
@@ -155,24 +155,33 @@ def main():
                 elif op == "del":
                     players.pop(key, None)
 
+            buffer_udp = ""
+
             try:
                 data = os.read(read_envioUDP, 1024)
             except BlockingIOError:
-                data = None
+                data = b""
 
             if data:
-                data = data.decode()
-                partes = data.split(" ")
+                buffer_udp += data.decode()
 
-                key = partes[0]
-                mensaje = partes[1]
+            while "\n" in buffer_udp:
+                linea, buffer_udp = buffer_udp.split("\n", 1)
+
+                if not linea.strip():
+                    continue
+
+                if ";" not in linea:
+                    print("Mensaje inválido:", linea)
+                    continue
+
+                key, mensaje = linea.split(";", 1)
 
                 addr = players.get(key)
                 if addr is None:
                     print(f"El player {key} no existe")
                     continue
 
-                #Envio dato recibido por el pipe
                 print("Enviando a:", key, addr)
                 server.udp_send(addr, mensaje.encode())
 
