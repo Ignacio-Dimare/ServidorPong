@@ -36,7 +36,16 @@ class TCPServer:
 
         # El servidor espera recibir el puerto UDP del cliente
         data = conn.recv(self.buffer_size)
-        udp_port_cliente = int(data.decode())
+        data = data.decode()
+        data = data.split("\n")
+
+        i = 0
+        for item in data:
+            if item.isdigit():
+                break
+            i += 1
+
+        udp_port_cliente = int(data[i])
         print(f"Cliente {addr} tiene puerto UDP: {udp_port_cliente}")
 
         udp_addr_cliente = (addr[0], udp_port_cliente)
